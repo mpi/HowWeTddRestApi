@@ -1,0 +1,1095 @@
+<!doctype html>
+<html lang="en">
+
+	<head>
+		<meta charset="utf-8">
+
+		<title>How we Test-Drive our REST API with Concordion</title>
+
+		<meta name="author" content="Michał Piotrkowski">
+
+		<meta name="apple-mobile-web-app-capable" content="yes" />
+		<meta name="apple-mobile-web-app-capable" content="yes" />
+		<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+		<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
+		<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
+
+		<link rel="stylesheet" href="css/reveal.css">
+		<link rel="stylesheet" href="css/theme/serif.css" id="theme">
+        <link rel="stylesheet" href="css/theme/vietnam.css">
+        
+		<!-- For syntax highlighting -->
+		<link rel="stylesheet" href="lib/css/zenburn.css">
+
+		<!-- If the query includes 'print-pdf', include the PDF print sheet -->
+		<script>
+			if( window.location.search.match( /print-pdf/gi ) ) {
+				var link = document.createElement( 'link' );
+				link.rel = 'stylesheet';
+				link.type = 'text/css';
+				link.href = 'css/print/pdf.css';
+				document.getElementsByTagName( 'head' )[0].appendChild( link );
+			}
+		</script>
+
+		<!--[if lt IE 9]>
+		<script src="lib/js/html5shiv.js"></script>
+		<![endif]-->
+	</head>
+
+	<body>
+
+		<div class="reveal">
+
+			<!-- Any section element inside of this container is displayed as a slide -->
+			<div class="slides">
+				<section data-background="images/journey.jpg" class="inverse">
+
+					<h2>How we Test-Drive our REST API with Concordion</h2>
+
+					<h3 style="float:right; padding-top: 50px;">
+						<small>
+							<a href="http://github.com/mpi">Michał Piotrkowski</a> <b>GeeCON'2015</b>
+						</small>
+					</h3>
+<aside class="notes">
+Hi, my name is Michał Piotrkowski.
+I live in Warsaw, where I work in a company called Pragmatists.
+<br><br>    
+Pragmatists is a software-house. We mostly develop web applications for our customers.
+<br><br>
+We do Test-Driven Development on a daily basis.     
+And we have been doing it for a couple of years now.
+</aside>
+				</section>
+                <section data-background="images/crossroads.jpg">
+                    
+<aside class="notes">
+During this time we have tried a lot of approches. 
+We failed many times, but eventually we have worked out our unique way of testing web applications.
+<br><br>
+As you might have guessed from the presentation title, we have ended up with REST and Concordion.
+<br><br>
+But before I show you how we do TDD of our applications (using these tools), I would like to show you how we got there in the first place.
+<br><br>
+Because in order to understand trade-offs that we made we have to understand the forces that led us to that point.
+<br><br>
+We don't have a lot of time, so get ready for a very quick journey. 
+I will show you different approches to testing web application that we tried in the past.
+</aside>                   
+                </section>
+                <section data-background="images/pile_of_books.jpg" class="inverse">
+<h2>TDD</h2>
+<aside class="notes">
+Before I started practicing TDD in a timely manner, I had read a lot of books on TDD.
+I thought I'm well prepared, so one day I decided to stop writing code without tests.
+<br><br>
+But life very quickly and brutally has brought me down to earth.
+<br><br>
+In most of the books (that introduce you to TDD) examples are extremly simple.
+Which is good because you should start with something simple, right.
+<br><br>    
+But in real life code, I haven't been implementing String Calculators, Prime Numbers finders, Bowling or Tennis Game Scoreboards, FizzBuzz'es, and so on.
+</aside>
+                </section>
+            <section>
+                <section>
+                    <img src="images/layers.png"/>
+<aside class="notes">
+In real life, classes turned out to be much more complex, their responsibilites were blurred.
+Objects had a lot of dependencies, and were tightly coupled to problematic frameworks.
+<br><br>
+This is especially true for a part of your project where you keep your Controllers, Presenters, Runner, and so on. 
+<br><br>
+Different people have different names for this place. I call it Application Layer.
+<br><br>
+I will focus mainly on this layer, because I find it especially problematic for testing.    
+</aside>
+                </section>                
+                <section>
+                    <img src="images/layers_app.png"/>
+<aside class="notes">
+So lets have a look at a typical code for this, so called applicaiton layer.
+<br><br>    
+Pay attention, because this class will play as an example throughout my whole presentation.
+</aside>
+                </section>                
+            </section>
+                <section>
+<pre style="margin:-20px;margin-top:-40px;width:auto;"><code class="java" data-trim contenteditable style="font-size: 16px; padding: 18px;max-height:none;">
+@RestController
+public class InvoiceController {
+
+    @Autowired
+    private InvoiceRepository repository;
+    
+    @RequestMapping(
+            value   = "/invoices/{invoiceNumber:.+}",
+            method  = GET)
+    public InvoiceJson findInvoice(@PathVariable("invoiceNumber") String invoiceNumber){
+    
+        Invoice invoice = repository.load(invoiceNumber).orElseThrow(IllegalArgumentException::new);
+        return new InvoiceJson(invoice);
+    }
+    
+    @JsonAutoDetect(fieldVisibility=ANY)
+    static class InvoiceJson {
+        
+        String invoiceNumber;
+        BillingDetailsJson billingDetails;        
+        List&lt;InvoiceItemJson&gt; lineItems = new ArrayList&lt;&gt;();
+
+        InvoiceJson(Invoice invoice) {
+            invoiceNumber = invoice.getNumber();
+            billingDetails = new BillingDetailsJson(invoice.getBillingDetails());
+            invoice.getLineItem().stream()
+                .forEach(lineItem -> lineItems.add(new InvoiceItemJson(lineItem)));
+        }
+    }
+</code></pre>
+<img class="fragment pointer current-visible" src="images/pointer_down.png" style="top: -15%; left: 40%;">
+<img class="fragment pointer current-visible" src="images/pointer_up.png" style="top: 32%; left: 40%;">
+<aside class="notes">
+What we see here is a Spring MVC controller.
+If you are not familiar with Spring MVC don't worry. 
+This is an extremly simple piece of code.
+<br><br>
+This code handles HTTP GET request on url /invoices/{invoiceNumber}
+It stores this something to invoiceNumber parameter,
+Then it reaches to repository for a proper invoice
+And finally it translates the invoice into DTO object that is 1-1 serialized to JSON. 
+<br><br>
+OK, so how can we test this class?
+</aside>                    
+        </section>
+<section>
+<section>
+    <h2><u>Chapter 1:</u><br> Unit Testing</h2>
+<aside class="notes">
+At the begining, TDD and Unit Testing was synonymus for me. I tried to unit test everything.
+<br><br>    
+If you have a hammer everything looks like a nail.
+<br><br>    
+Let's have a look at a test that I would probably have written back then.
+</aside>
+    </section>    
+                    <section>     
+<h3>Unit Test (Setup)</h3>               
+<pre style="margin:-20px;margin-top:-25px;width:auto;"><code class="java" data-trim contenteditable style="font-size: 16px; padding: 18px;max-height:none;">
+@RunWith (MockitoJUnitRunner.class)
+public class InvoiceControllerUnitTest {
+
+    @Mock
+    private InvoiceRepository repository;
+    
+    private InvoiceController controller;
+
+    @Before
+    public void setUp() {
+
+        controller = new InvoiceController(repository);
+        
+    }
+</code></pre>      
+<img class="fragment pointer current-visible" src="images/pointer_down.png" style="top: 20%; left: 40%;">   
+<aside class="notes">
+Setup for this test might look like this:
+<br>
+We instantiate InvoiceController passing mocked Repository in constructor.
+</aside>                        
+                    </section>
+                    <section  data-transition="none">   
+<h3>Unit Test</h3>         
+<pre style="margin:-20px;margin-top:-25px;width:auto;"><code class="java" data-trim contenteditable style="font-size: 16px; padding: 18px;max-height:none;">
+@Test
+public void should_return_details_of_invoice_by_invoice_number() {
+
+	// given:
+	Invoice invoice = new Invoice("INV.2015.01");
+	invoice.billFor(new BillingDetails("Sherlock Holmes", "London", "Baker Street 221b"));
+	invoice.addLineItem("Cap", Money.eur("12.49")).applyTax(Tax.of("23%"));
+
+	when(repository.load("INV.2015.01")).thenReturn(invoice);
+
+	// when:
+	InvoiceJson actualInvoice = controller.findInvoice("INV.2015.01");
+
+	// then:
+	InvoiceJson expectedInvoice = new InvoiceJson("INV.2015.01");
+	expectedInvoice.billingDetails = new BillingDetailsJson("Sherlock Holmes", "London", "Baker Street 221b");
+	expectedInvoice.lineItems.add(new InvoiceItemJson("Cap", 1, "12.49 EUR", "23%"));
+
+	assertReflectionEquals(expectedInvoice, actualInvoice);
+}
+</code></pre>        
+<img class="fragment pointer current-visible" src="images/pointer_up.png" style="top: 40%; left: 50%;">               
+<img class="fragment pointer current-visible" src="images/pointer_down.png" style="top: 15%; left: 50%;">               
+<img class="fragment pointer current-visible" src="images/pointer_down.png" style="top: 42%; left: 50%;">               
+<aside class="notes">
+Then we setup mock to return particular Invoice object.
+We invoke a method that we wanted to test and we verify that proper DTO object has been returned.
+<br><br>
+Simple as that. 
+<br><br>    
+This test is fast, familiar, easy to understand.
+Even more, this test ensures 100% coverage on this method.
+<br><br>
+Great. So why don't I stop my presentation here?
+<br><br>    
+Because often despite the fact that the test was passing, after deploying application to server it was not working.
+<br><br>    
+I had to test it manually and I always had to fix some mistakes (typos, missing annotations, missing constructors, misconfiguration).
+<br><br> 
+So what is wrong with this test? 
+</aside>                        
+                </section>
+                    <section data-transition="none">            
+<pre style="margin:-20px;margin-top:-40px;width:auto;"><code class="java" data-trim contenteditable style="font-size: 16px; padding: 18px;max-height:none;">
+@RestController
+public class InvoiceController {
+
+    @Autowired
+    private InvoiceRepository repository;
+    
+    @RequestMapping(
+            value   = "/invoices/{invoiceNumber:.+}",
+            method  = GET)
+    public InvoiceJson findInvoice(@PathVariable("invoiceNumber") String invoiceNumber){
+    
+        Invoice invoice = repository.load(invoiceNumber).orElseThrow(IllegalArgumentException::new);
+        return new InvoiceJson(invoice);
+    }
+    
+    @JsonAutoDetect(fieldVisibility=ANY)
+    static class InvoiceJson {
+        
+        String invoiceNumber;
+        BillingDetailsJson billingDetails;        
+        List&lt;InvoiceItemJson&gt; lineItems = new ArrayList&lt;&gt;();
+
+        InvoiceJson(Invoice invoice) {
+            invoiceNumber = invoice.getNumber();
+            billingDetails = new BillingDetailsJson(invoice.getBillingDetails());
+            invoice.getLineItem().stream()
+                .forEach(lineItem -> lineItems.add(new InvoiceItemJson(lineItem)));
+        }
+    }
+</code></pre>         
+<div class="fragment current-visible">
+	<img class=" pointer" src="images/pointer_down.png" style="top: 6%; left: 50%; width: 180px; height: 180px">            
+	<img class=" pointer" src="images/pointer_down.png" style="top: 0%; left: 30%; width: 180px; height: 180px">            
+	<img class=" pointer" src="images/pointer_up.png" style="top: -4%; left: 10%; width: 180px; height: 180px">            
+	<img class=" pointer" src="images/pointer_up.png" style="top: 5%; left: 10%; width: 180px; height: 180px">            
+	<img class=" pointer" src="images/pointer_up.png" style="top: 47%; left: 30%; width: 180px; height: 180px">            
+</div>
+<aside class="notes">   
+I failed to understand here that this class is not a POJO. And it shouldn't be tested like one.
+<br><br>
+There is a lot of magic happening behind the scene. Stuff that is very important: request dispatching, pattern matching, json serialization & deserialization, dependency injection...
+<br><br>
+Usually we would have to handle this all by ourselves, 
+<br>
+but we are lucky. Framework (Spring MVC in this case) takes over this burden from us.
+<br><br>    
+But it requires valid instructions from us. And if those instructions are wrong, well, Unit Tests won't detect it.
+</aside>                        
+                </section>                
+                <section>
+                    <img src="images/dummy_of_a_police_car.jpg">'
+<aside class="notes">
+Another problem that we experienced while trying to Unit Test application code was an overuse of mocks.
+<br><br>    
+I won't go into details. I just want to say that it can go out of control. 
+<br><br>    
+And having lots of mocks makes refactoring your code painfull. 
+</aside>                        
+                </section>
+				<section>
+					<h2>Unit Testing</h2>
+                    <ul>
+                    <h3 style="color:green">Pros</h3>
+                        <li>Simple & Familiar</li>
+                        <li>Fast</li>
+                    <h3 style="color:red">Cons</h3>
+                        <li>Low confidence</li>
+                        <li>Framework code stays untested</li>
+                        <li>Lot of mocking</li>
+                    <h3 style="color:blue">Patterns</h3>                    
+                        <li>Humble Dialog Box</li>
+                        <li>Presenter First</li>
+                    </ul>
+<aside class="notes">
+To sum up:
+<br><br>    
+Unit testing is simple, straightforward, and pretty fast.
+<br><br>    
+<b>But:</b> we don't test for proper integration with framework,
+<br><br>    
+and unit tests can lead to an overuse of mocking.
+<br><br>
+But, still, this is a perfectly valid method. 
+<br><br>
+And people are following this approach all the time. With success.
+<br>
+Moreover some patterns which support this kind of testing have been identified, like:
+- Humble Dialog Box
+- Presenter First
+<br><br>    
+OK, so let's move forward. 
+</aside>                        
+				</section>
+</section>
+<section>
+                <section>
+    <h2><u>Chapter 2:</u><br> Web Browser Automation</h2>
+<aside class="notes">
+As I have mentioned before, Unit Tests alone, didn't protect us from manual testing of application. 
+<br><br>    
+So I started looking around for somenthing that could replace this manual testing, and a colleague of mine told me about Selenium.  
+I started learning it. 
+<br><br>
+For those who haven't heard about it: This is a 'web browser automation' tool that enables us to 
+interact with a browser like a normal user would (navigating pages, clicking links, filling forms, and so on).
+<br><br>    
+This is as close to manual testing as it can be. 
+<br><br>    
+Let's have a look at such a test. 
+</aside>
+    </section>                   
+                    <section>
+<h3>End-to-End Test (Setup)</h3>
+<pre style="margin:-20px;margin-top:-25px;width:auto;"><code class="java" data-trim contenteditable style="font-size: 16px; padding: 18px;max-height:none;">
+@RunWith (SpringJUnit4ClassRunner.class)
+@SpringApplicationConfiguration (classes = {Application.class})
+@IntegrationTest
+@WebAppConfiguration
+public class InvoiceControllerEndToEndTest {
+
+    @Autowired
+    private InvoiceRepository invoiceRepository;
+    
+    private WebDriver driver;
+
+    @Before
+    public void setUp() {
+        driver = new FirefoxDriver(new FirefoxProfile());        
+    }
+</code></pre>         
+<img class="fragment pointer current-visible" src="images/pointer_up.png" style="top: 15%; left: 48%;">
+<img class="fragment pointer current-visible" src="images/pointer_up.png" style="top: 48%; left: 35%;">
+<img class="fragment pointer current-visible" src="images/pointer_down.png" style="top: 30%; left: 40%;">                  
+<aside class="notes">
+Instead of creating controller manually, we start whole application (together with servlet container).
+We use Spring Boot for this.
+<br><br>        
+Then instead of creating mock of repository we inject to the test real repository.
+<br><br>        
+We create instance of Driver (which can be seen as a browser instance) that will enable us to simulate user interactions with application.
+</aside>                          
+                    </section>
+                    <section>
+<pre style="margin:-20px;margin-top:-40px;width:auto;"><code class="java" data-trim contenteditable style="font-size: 16px; padding: 18px;max-height:none;">&nbsp;&nbsp;&nbsp;&nbsp;
+    @Test
+    public void should_return_details_of_invoice_by_invoice_number() throws Exception {
+
+        // given:
+        Invoice invoice = new Invoice("INV.2015.01");
+        invoice.billFor(new BillingDetails("Sherlock Holmes", "London", "Baker Street 221b"));
+        invoice.addLineItem("Cap", eur("12.49")).applyTax(of("23%"));
+        invoiceRepository.store(invoice);
+        
+        // when:
+        driver.get(path("/client/invoices.html"));
+        driver.findElement(By.linkText("INV.2015.01")).click();
+        
+        // then:
+        assertThat(isVisible(".invoice")).isTrue();
+        assertThat(textOf(".invoice .invoice-number")).isEqualTo("INV.2015.01");
+        assertThat(textOf(".invoice .billing-details .contact")).isEqualTo("Sherlock Holmes");
+        assertThat(textOf(".invoice .billing-details .addressLine1")).isEqualTo("London");
+        assertThat(textOf(".invoice .billing-details .addressLine2")).isEqualTo("Baker Street 221b");
+        assertThat(textOf(".invoice .item:nth-child(1) .product")).isEqualTo("Cap");
+        assertThat(textOf(".invoice .item:nth-child(1) .qty")).isEqualTo("1");
+        assertThat(textOf(".invoice .item:nth-child(1) .price")).isEqualTo("12.49 EUR");
+        assertThat(textOf(".invoice .item:nth-child(1) .tax")).isEqualTo("23%");
+    }
+</code></pre>       
+<img class="fragment pointer current-visible" src="images/pointer_up.png" style="top: 18%; left: 48%;">
+<img class="fragment pointer current-visible" src="images/pointer_down.png" style="top: 1%; left: 50%;">
+<img class="fragment pointer current-visible" src="images/pointer_down.png" style="top: 18%; left: 50%;">   
+<aside class="notes">
+In a 'given' part of the test we alter appliction state by creating sample Invoice.
+<br><br>        
+Then we simulate entering invoices page and selecting particular invoice.
+<br><br>    
+And then we scan resulting HTML for presence of valid values.
+<br><br>
+As you can see this test requires an existence of client application while it is being written. Moreover it
+is coupled to HTML structure of this client application.
+</aside>                          
+                    </section>
+                <section>
+                    <img src="images/the_sine_of_death.png">
+<aside class="notes">
+Instead of describing all the issues with Selenium tests that we had to face.
+I will show you this great picture of Gojko Adzic. 
+<br><br>    
+'The Sine of Death of UI Test Automation'. This picture is worth thousand of words.
+<br><br>
+When we used Unit Tests only. We didnt have a lot of faith in our tests. We had a lot of false positives 
+(despite tests were passing, our application was not working). 
+<br><br>
+In an End-to-End testing we had opposite situation.
+When test were passing there was a pretty good chance that application was working too.
+But we had a lot of false negatives. Tests were failing, however application was working perfectly fine. 
+<br><br>    
+Neigher was it good.
+</aside>                        
+                </section>
+                <section>
+					<h2>End-to-End Tests</h2>
+                    <ul>
+                    <h3 style="color:green">Pros</h3>
+                        <li>High confidence</li>
+                    <h3 style="color:red">Cons</h3>
+                        <li>Expensive to maintain (fragile)</li>
+                        <li>Slow</li>
+                        <li>Some frameworks can be very difficult (impossible) to test</li>
+                    <h3 style="color:blue">Patterns</h3>                    
+                        <li>Page Object Pattern</li>
+                    </ul>
+<aside class="notes">
+End-to-End tests:
+<br><br>    
+Advanteges:<br>
+  High confidence    
+<br><br>    
+Disadvantages:<br>
+  Fragile and expensive to maintain<br>
+  Extremly slow
+<br><br>    
+Again, people are using it, and we are using it too. And there are some patterns like Page Object Pattern
+that try to address some of the problems we talked about. Lets continue.
+</aside>                        
+                </section>
+</section>
+<section>
+                <section>
+                    <h2><u>Chapter 3:</u><br>Subcutaneous Testing</h2>
+<aside class="notes">
+Subcutaneous Test.<br>
+This isn't a popular word so I will translate it for polish attendents. 
+<br><br>
+Testy podskórne. End of translation. 
+<br><br>    
+Subcutaneous Testing is a pattern described by Martin Folwer. 
+</aside>                          
+                </section>
+                <section>
+<h4>“I use subcutaneous test to mean a test that operates just under the UI of an application. This is particulary valuable when doing functional testing of an application: when you want to test end-to-end behavior, but it's difficult to test through the UI itself.
+<br><br>
+Subcutaneous testing can avoid difficulties with hard-to-test presentation technologies and usually is much faster than testing through the UI.”</h4>
+                        <h5 style="text-align:right;font-style:italic">Martin Fowler</h5>                        
+                    </h3>
+<aside class="notes">
+So according to Martin Fowler Subcutaneous test is a test ...
+</aside>                          
+                </section>
+                <section>
+					<h2>Subcutaneous Testing</h2>
+                    <ul>
+                    <h3 style="color:green">Pros</h3>
+                        <li>More confident than Unit Test</li>
+                        <li>Faster and less fragile than Web Browser Automation</li>
+                    <h3 style="color:red">Cons</h3>
+                        <li>Problematic framework code remains untested</li>
+                        <li>Code is more complicated <br>(a need of isolating problematic dependencies)</li>
+<!--
+                    <h3 style="color:blue">Patterns</h3>                    
+                        <li>Subcutaneous Testing</li>
+                        <li>Application Facade</li>
+-->
+                    </ul>  
+<aside class="notes">
+With Subcutaneous Test we got rid of some of the drawbacks of Unit and End-to-End tests. 
+<br><br>    
+We had better confidence than in Unit Tests, and they were less fragile and faster than Selenium Tests.
+<br><br>    
+But some of the drawbacks remained. 
+<br><br>    
+Most of all, just like in the Unit tests, code that integrates with framework remains untested. 
+</aside>                          
+				</section>
+                    <section>
+<h3>Subcutaneous Test (Setup)</h3>
+<pre style="margin:-20px;margin-top:-25px;width:auto;"><code class="java" data-trim contenteditable style="font-size: 16px; padding: 18px;max-height:none;">
+@RunWith (SpringJUnit4ClassRunner.class)
+@SpringApplicationConfiguration (classes = {Application.class})
+@IntegrationTest
+@WebAppConfiguration
+public class InvoiceControllerSubcutaneousTest {
+
+    @Autowired
+    private InvoiceRepository invoiceRepository;
+
+    @Autowired
+    private InvoiceController controller;
+    
+</code></pre>         
+<img class="fragment pointer current-visible" src="images/pointer_up.png" style="top: 18%; left: 48%;">           
+<aside class="notes">
+Getting back to our example. 
+<br><br>    
+Setup of the test would be very similiar to End-to-End test.
+</aside>                          
+                    </section>
+                    <section>
+<h3>Subcutaneous Test</h3>
+<pre style="margin:-20px;margin-top:-25px;width:auto;"><code class="java" data-trim contenteditable style="font-size: 16px; padding: 18px;max-height:none;">&nbsp;&nbsp;&nbsp;&nbsp;
+    @Test
+    public void should_return_details_of_invoice_by_invoice_number() throws Exception {
+
+        // given:
+        Invoice invoice = new Invoice("INV.2015.01");
+        invoice.billFor(new BillingDetails("Sherlock Holmes", "London", "Baker Street 221b"));
+        invoice.addLineItem("Cap", eur("12.49")).applyTax(of("23%"));
+
+        invoiceRepository.store(invoice);
+
+        // when:
+        InvoiceJson actualInvoice = controller.findInvoice("INV.2015.01");
+        
+        // then:
+        InvoiceJson expectedInvoice = new InvoiceJson("INV.2015.01");
+        expectedInvoice.billingDetails = new BillingDetailsJson("Sherlock Holmes", "London", "Baker Street 221b");
+        expectedInvoice.lineItems.add(new InvoiceItemJson("Cap", 1, "12.49 EUR", "23%"));
+        
+        assertReflectionEquals(expectedInvoice, actualInvoice);
+    }
+</code></pre>
+<img class="fragment pointer current-visible" src="images/pointer_down.png" style="top: 8%; left: 25%;">          
+<aside class="notes">
+And test itself would be very similiar to Unit Test. 
+<br><br>    
+The only difference in this case is using actual repository instead of a mock.
+</aside>                          
+                    </section>
+                </section>
+                <section style="height:80%;">
+                    <img class="fragment current-fragment current-visible" src="images/journey_0.png" style="position:absolute;width:100%;height:100%;left:0px;">
+                    <img class="fragment" src="images/journey_1.png" style="position:absolute;width:100%;height:100%;left:0px;">
+                    <img class="fragment" src="images/journey_2.png" style="position:absolute;width:100%;height:100%;left:0px;">
+                    <img class="fragment" src="images/journey_3.png" style="position:absolute;width:100%;height:100%;left:0px;">
+                    <img class="fragment" src="images/journey_4.png" style="position:absolute;width:100%;height:100%;left:0px;">
+                    <img class="fragment" src="images/journey_5.png" style="position:absolute;width:100%;height:100%;left:0px;">
+<aside class="notes">
+If we drew a scale that represents a number of components involved in our tests.
+<br><br>
+Our transition from Unit to Selenium Tests and then from Selenium to Subcutaneous Test could by represented like this.
+<br><br>    
+We moved from left most side of the scale to the right side and then moved back to somewhere in the middle. 
+<br><br>    
+Where we were unhappy that we didn't test framework integration code. 
+<br><br>    
+So let's do a one more leap. Let's explore something between Subcutanous and End-to-End Test.
+</aside>                          
+                </section>
+		</section>
+		<section>
+                <section>
+					<h2><u>Chapter 4:</u><br>HTTP Level testing</h2>
+<aside class="notes">
+In HTTP Level testing we treat application as a Black Box and interact with it trought 
+HTTP messages. 
+<br><br>
+But unlike Web Browser Automation we test it in sepration from actual client. 
+</aside>                          
+                </section>
+                <section>
+					<h2>HTTP Level testing</h2>
+                    <ul>
+                    <h3 style="color:green">Pros</h3>
+                        <li>More confident than Subcutaneous Testing</li>
+                        <li>Faster than Web Browser Automation</li>
+                        <li>All server code is tested</li>
+                        <li>No need for additional abstractions to decouple problematic framework code</li>
+                    <h3 style="color:red">Cons</h3>
+                        <li>Client code is untested (has to be tested separetly)</li>
+                        <li>Requires certain architecture (cannot be used with JSF, Vaadin, ZK, Wicket, ...)</li>
+                    </ul>                    
+<aside class="notes">
+So let's examine Pros and Cons of HTTP Level testing.
+<br><br>    
+We have greater confidence than in Subcutaneous test due to the fact that the whole server code is exercised. 
+<br><br>    
+We are ignorant of the existence of the client. So unlike UI automation tests we are resistant to UI changes.
+<br><br>    
+We gain an explicit API to our application that can be consumed by other/future clients (like iphone or android devices, different systems).
+<br><br>
+The most important stoper whith this kind of testing is that it cannot be applied to every application.
+We have to adopt a certain kind of client-server architecture. 
+</aside>                          
+                </section>
+                <section>
+					<h2>HTTP Level testing</h2>
+                    <ul>
+                    <h3 style="color:green">Pros</h3>
+                        <li>More confident than Subcutaneous Testing</li>
+                        <li>Faster than Web Browser Automation</li>
+                        <li>All server code is tested</li>
+                        <li>No need for additional abstractions to decouple problematic framework code</li>
+                    <h3 style="color:red">Cons</h3>
+                        <li>Client code is untested (has to be tested separetly)</li>
+                        <li>Requires certain architecture (cannot be used with JSF, Vaadin, ZK, Wicket, ...)</li>
+                    </ul>                    
+<aside class="notes">
+There should be no HTML templating on server side. 
+<br><br>
+Server should return pure data, and a rich client should take care of HTML generation. 
+<br><br>    
+We need also a framework that gives us pretty good control over HTTP protocol.    
+Those requirements exclude effectively a lot of popular frameworks, like JSF, GWT, Vaadin, Wicket, ZK. 
+<br><br>
+Since great success of AngularJS this kind of architecture may look like nothing new for you. 
+<br><br>    
+But believe me, few years ago this was a revelation and revolution for me. 
+<br><br>
+No body wanted to code JavaScript by his own and <br>
+no body cared about HTTP methods, headers and status messages!    
+</aside>                          
+                </section>
+            
+                <section>              
+<h3>HTTP Level Test (Setup)</h3>      
+<pre style="margin:-20px;margin-top:-25px;width:auto;"><code class="java" data-trim contenteditable style="font-size: 16px; padding: 18px;max-height:none;">
+@RunWith(SpringJUnit4ClassRunner.class)
+@SpringApplicationConfiguration(classes = {Application.class})
+@IntegrationTest
+@WebAppConfiguration
+public class InvoiceControllerRestTest {
+
+    @Autowired
+    private InvoiceRepository invoiceRepository;
+
+</code></pre>
+<aside class="notes">
+Again let's have a look at code.
+<br><br>    
+Setup and given part here is similar to what we saw in End-to-End and Subcutenous tests.
+</aside>                                                    
+                </section>
+                <section>              
+<h3>HTTP Level Test</h3>      
+<pre style="margin:-20px;margin-top:-25px;width:auto;"><code class="java" data-trim contenteditable style="font-size: 16px; padding: 18px;max-height:none;">
+&nbsp;&nbsp;&nbsp;&nbsp;@Test
+    public void should_return_details_of_invoice_by_invoice_number() {
+
+        // given:
+        Invoice invoice = new Invoice("INV.2015.01");
+        invoice.billFor(new BillingDetails("Sherlock Holmes", "London", "Baker Street 221b"));
+        invoice.addLineItem("Cap", Money.eur("12.49")).applyTax(Tax.of("23%"));
+        invoice.addLineItem(2, "Pipe", Money.eur("5.99")).applyTax(Tax.of("23%"));
+        invoiceRepository.store(invoice);
+
+        when().
+            get("/invoices/INV.2015.01").
+        then().         
+            statusCode(200).
+            body(equalTo(json("{"
+                    + "'invoiceNumber':'INV.2015.01',"
+                    + "'billingDetails':{"
+                        + "'contact':'Sherlock Holmes',"
+                        + "'addressLine1':'London',"
+                        + "'addressLine2':'Baker Street 221b'},"
+                    + "'lineItems':["
+                        + "{'product':'Cap','quantity':1,'price':'12.49 EUR','tax':'23%'},"
+                        + "{'product':'Pipe','quantity':2,'price':'5.99 EUR','tax':'23%'}"
+                    + "]}")));
+    }
+}
+</code></pre>
+<img class="fragment pointer current-visible" src="images/pointer_down.png" style="top: 12%; left: 25%;">  
+<aside class="notes">
+But in 'when' and 'then' parts of the test we are sending a real HTTP get request.
+<br><br>    
+We are using here RestAssured library for easy and fluent HTTP message creation and verification.
+</aside>                                                    
+                </section>
+	</section>
+            <section>
+                    
+                    <table>
+                        <tr>
+                            <th></th><th>Unit Testing</th><th>Subcutaneous Testing</th><th>HTTP Level Testing</th><th>End-to-End Testing</th>
+                        </tr>
+                        <tr>
+                            <th>Speed</th><td class="good">Fast</td><td class="ok">OK</td><td class="ok">OK</td><td class="bad">Slow</td>
+                        </tr>
+                        <tr>
+                            <th>Confidence</th><td class="bad">Low</td><td class="ok">OK</td><td class="ok">OK</td><td class="good">High</td>
+                        </tr>
+                        <tr>
+                            <th>Maintenence cost</th><td class="good">Low</td><td class="ok">OK</td><td class="ok">OK</td><td class="bad">High</td>
+                        </tr>
+                        <tr>
+                            <th>Tests framework</th><td class="bad">No</td><td class="bad">No</td><td class="good">Yes</td><td class="good">Yes</td>
+                        </tr>
+                        <tr>
+                            <th>Tests client</th><td class="bad">No</td><td class="bad">No</td><td class="bad">No</td><td class="good">Yes</td>
+                        </tr>
+                    </table>
+<aside class="notes">
+Ok, so let's recap. 
+<br><br>    
+I have introduced 4 aproches to testing web applications. 
+<br><br>    
+There is no clear winner. Each one has some advantages and disadvanteges. There is no silver bullet, this is clear.
+<br><br>    
+But later in my talk, I will focus on HTTP Level Testenig, becouse it turned out to be a very effective tool for us. 
+</aside>                      
+                </section>                            
+<!--
+                <section>
+					<h2>Architecture</h2>
+                    <ul>
+                    <h3 style="color:red">Constraints</h3>
+                        <li>REST API Server</li>
+                        <li>No HTML templating on server side</li>
+                        <li>Rich Client (ex. Javascipt)</li>
+                    <h3 style="color:green">Advanteges</h3>
+                        <li>Explicit API that can be consumed by other Clients</li>
+                    </ul>                    
+<aside class="notes">
+Lets talk about architecture. Cause not every kind of application can be tested this way (at least not effectively).
+It requires Client-Server architecture. (Prefferably REST server, but RPC will work too).
+There should be no HTML templating on server side. Server is returing pure data, and
+rich client should take care of HTML generation. We need also framework that gives us pretty good control over HTTP protocol.
+Those requirements excludes effectively lot of popular frameworks, like JSF, GWT, Vaadin, Wicket, ZK. 
+
+Since great success of Angular this kind of architecture might look no rocket science for you. 
+But believe me, few years ago this was revolution for me. No body wanted to code JavaScript by his own and 
+no body cared about HTTP methods, header and status messages!
+    
+This kind of architecture has one very cool side effect. It creates expiclit API to our application that can be used
+by other type of clients (iPhone, Android devices, other systems, and so on). 
+</aside>                      
+                </section>
+-->
+                <section>                    
+<pre style="margin:-20px;margin-top:-40px;width:auto;"><code class="java" data-trim contenteditable style="font-size: 16px; padding: 18px;max-height:none;">
+&nbsp;&nbsp;&nbsp;&nbsp;@Test
+    public void should_return_details_of_invoice_by_invoice_number() {
+
+        // given:
+        Invoice invoice = new Invoice("INV.2015.01");
+        invoice.billFor(new BillingDetails("Sherlock Holmes", "London", "Baker Street 221b"));
+        invoice.addLineItem("Cap", Money.eur("12.49")).applyTax(Tax.of("23%"));
+        invoice.addLineItem(2, "Pipe", Money.eur("5.99")).applyTax(Tax.of("23%"));
+        invoiceRepository.store(invoice);
+
+        when().
+            get("/invoices/INV.2015.01").
+        then().         
+            statusCode(200).
+            body(equalTo(json("{"
+                    + "'invoiceNumber':'INV.2015.01',"
+                    + "'billingDetails':{"
+                        + "'contact':'Sherlock Holmes',"
+                        + "'addressLine1':'London',"
+                        + "'addressLine2':'Baker Street 221b'},"
+                    + "'lineItems':["
+                        + "{'product':'Cap','quantity':1,'price':'12.49 EUR','tax':'23%'},"
+                        + "{'product':'Pipe','quantity':2,'price':'5.99 EUR','tax':'23%'}"
+                    + "]}")));
+    }
+}
+</code></pre> 
+<aside class="notes">
+OK, so let's have a look once again at this test.
+<br><br>    
+It is very usefull. It tests both application logic and framework. But it is not forcing
+on us any particular UI framework. 
+<br><br>
+We can use Spring MVC, Jersey, RESTeasy, we can write HttpServlet by hand.
+We can even mix those approches. 
+<br><br>    
+This effectively encourages us to do refactorings. <br>
+We can completly rewrite backend or change framework<br>
+and as long as we don't change HTTP API this test will work. 
+<br><br>
+But this test has one big flaw.
+</aside>                     
+                </section>  
+                <section>                    
+<pre style="margin:-20px;margin-top:-40px;width:auto;"><code class="java" data-trim contenteditable style="font-size: 16px; padding: 18px;max-height:none;">
+&nbsp;&nbsp;&nbsp;&nbsp;@Test
+    public void should_return_details_of_invoice_by_invoice_number() {
+
+        // given:
+        Invoice invoice = new Invoice("INV.2015.01");
+        invoice.billFor(new BillingDetails("Sherlock Holmes", "London", "Baker Street 221b"));
+        invoice.addLineItem("Cap", Money.eur("12.49")).applyTax(Tax.of("23%"));
+        invoice.addLineItem(2, "Pipe", Money.eur("5.99")).applyTax(Tax.of("23%"));
+        invoiceRepository.store(invoice);
+
+        when().
+            get("/invoices/INV.2015.01").
+        then().         
+            statusCode(200).
+            body(equalTo(json("{"
+                    + "'invoiceNumber':'INV.2015.01',"
+                    + "'billingDetails':{"
+                        + "'contact':'Sherlock Holmes',"
+                        + "'addressLine1':'London',"
+                        + "'addressLine2':'Baker Street 221b'},"
+                    + "'lineItems':["
+                        + "{'product':'Cap','quantity':1,'price':'12.49 EUR','tax':'23%'},"
+                        + "{'product':'Pipe','quantity':2,'price':'5.99 EUR','tax':'23%'}"
+                    + "]}")));
+    }
+}
+</code></pre> 
+<img class="fragment pointer current-visible" src="images/pointer_down.png" style="top: 14%; left: 40%;"> 
+<aside class="notes">
+Readability. Readability is (in my opinion) the most important quality of a good test.
+<br><br>    
+If test is obscure, even if it has a value, nobody wants to work with it. And eventually this test degradetes.
+<br><br>    
+Obviously, the worst part here is json assertion. 
+<br><br>
+Anybody who was forced to create JSON in Java knows the pain. 
+<br><br>    
+We could switch to Scala or Groovy where there is multiline string and general better support for DSL. 
+<br><br>    
+But maybe we can do better.     
+</aside>                     
+                </section>            
+                <section>
+                    <img src="images/instagram_api.png"/>
+<aside class="notes">
+Some time ago I was investigating Instagram API for one of my projects. 
+<br><br>    
+Let's have a look at a sample page from Instagram API documentation.
+Documentation I've found particularly usefull. 
+<br><br>
+It shows us all the available REST endpoints.<br> 
+For every endpoint we have a list of HTTP methods with a URL and sample request and response. <br>
+JSON document is pretty printed with a highlighted syntax. It looks nice. It is great to have
+such a documentation. 
+<br><br>    
+But wait. Tests are your documentation! <br>
+It would be great to have test that are so clear as this documentation.
+I started looking around, and found this.
+</aside>                     
+                </section>
+                <section>
+                    <h1 style="color:#000000;font-family:Arial;">
+                        <img src="images/concordion_logo.jpeg" style="width:160px;height:160px;vertical-align:middle;">
+                        Concordion
+                    </h1>
+                    <div>
+                        <h3>“Concordion is similar to Cucumber but focuses on readability.”</h3>
+                        <h4 style="text-align:right;font-style:italic">www.concordion.org</h4>
+                    </div>
+<aside class="notes">
+Concordion. OK, what is Concordion. 
+<br><br>
+On Concordion main page you can learn that "Concordion is similar to Cucumber but focuses on readability".
+<br><br>    
+Notice the keyword "readability", this is exactly what we were looking for, right?
+<br><br>    
+But beside that, this definition doesn't help us much, so to understand what Concordion is we have to go to Cucumber page where we find:
+</aside>                       
+                </section>
+                <section>
+                    <h1 style="color:#000000;font-family:Arial;">
+                        <img src="images/concordion_logo.jpeg" style="width:160px;height:160px;vertical-align:middle;">
+                        Concordion
+                    </h1>
+                    <div>
+                        <h4>“Concordion is similar to Cucumber but focuses on readability.”</h4>
+                        <h5 style="text-align:right;font-style:italic">www.concordion.org</h5>
+                    </div>
+                    <div>
+                        <h3>“Cucumber is a tool that executes plain-text functional descriptions as automated tests.”</h3>
+                        <h4 style="text-align:right;font-style:italic">www.cukes.info</h4>
+                    </div>
+<aside class="notes">
+That "Cucumber is a tool that executes plain-text functional descriptions as automated tests.".
+<br><br>    
+So basicaly we write our tests in plain-text (in case of Cucumber) or in hyper-text/HTML (in case of Concordion).
+<br><br>
+Many people reject the idea of writing tests as a HTML, when they hear about this for the first time. In consequence they consider
+Concordion as something not cool and inferior.
+<br><br>    
+But for us, writing tests in HTML worked very well, but we had to customize Concordion a little bit to make it more aligned to our needs.
+</aside>                       
+                </section>
+                <section>
+					<h2>Challenges</h2>
+                    <ul>
+                        <li>Creating HTTP requests</li>
+                        <li>Asserting HTTP responses</li>
+                        <li>Generating & rendering JSON</li>
+                        <li>Asserting JSON</li>
+                        <li>Test Set Up</li>
+                    </ul>                    
+<aside class="notes">
+Challenges we had to face were: 
+Creating HTTP requests and asserting HTTP responses<br>, 
+generating, rendering and asserting JSON documents. <br>
+Controlling server state in a way that will enable us to prepare 
+a valid setup for every test (stuff that usually goes to the given part of the test).
+<br><br>    
+So we have built our own set of plugins on top of Concordion extensions API, that address these chalenges.
+<br><br>    
+To better understand how we did it, let's do a live coding that I promised in description of my talk!
+<br><br>    
+We will do a simple 'Hello World' example!
+</aside>                       
+                </section>
+		<section>
+			<section>
+				<h1>Live Demo</h1>
+			</section>
+			<section>
+				<h5>Test case written in HTML</h5>
+				<img src="images/live_coding_0.png">
+			</section>
+			<section>
+				<h5>Test Fixture (Concordion)</h5>
+				<img src="images/live_coding_1.png">
+			</section>
+			<section>
+				<h5>Failing Test</h5>
+				<img src="images/live_coding_2.png">
+			</section>
+			<section>
+				<h5>Endpoint implementation</h5>
+				<img src="images/live_coding_3.png">
+			</section>
+			<section>
+				<h5>Passing Test</h5>
+				<img src="images/live_coding_4.png">
+			</section>
+			<section>
+				<h2>Examples of tests in HTML with Concordion</h2>
+			</section>
+			<section>
+				<h5>"Drawing" invoice in HTML</h5>
+				<img src="images/live_coding_5.png">
+			</section>
+			<section>
+				<h5>Pretty printing &amp; Syntax highliting (Codemirror)</h5>
+				<img src="images/live_coding_6.png">
+			</section>
+			<section>
+				<h5>Test as a table</h5>
+				<img src="images/live_coding_7.png">
+			</section>
+			<section>
+				<h5>Test as a SVG image</h5>
+				<img src="images/live_coding_8.png">
+			</section>
+
+		</section>
+		
+		<section>
+<ul>
+	<li>Living Documentation</li>
+	<li>Executable Specification</li>
+	<li>Self Validated</li>
+	<li>Always up-to-date</li>
+</ul>
+<aside class="notes">
+As you can see, primarily we were looking simply for a good tests, <br>
+but in the end we got much, much more.
+<br><br>
+We have built a tool for creating Living Documentation. 
+<br><br>
+Some of you may feel, that it is a similiar thing to Swagger, which is a platform
+for generating nicely looking documentation of REST API, basing on your controllers code.
+<br><br>
+But unlike Swagger, which is basicaly a Javadoc++ for you REST API, our tool gives us 
+an Executable, Self Validated Specification that is always Up-to-Date.
+</aside>
+                </section>
+                <section data-background="images/sunset3.jpg" class="inverse">
+			<h2>Thank you!</h2>
+			<br><br>
+			<h3><a href="mailto:mpi.michal.piotrkowski@gmail.com">mpi.michal.piotrkowski@gmail.com</a></h3>
+			<h3><a href="http://twitter.com/mpidev">@mpidev</a></h3>
+<aside class="notes">
+If I had to pick one thing, that I would like you to rememeber from this presentation.
+<br><br>
+It would be the "journey" part.
+<br><br>
+If you have tests that are obscure, <br>
+tests that are expensive to maintain, <br>
+test you can't rely on.<br>
+If you have to do a lot of manual testing of your application. 
+<br><br>
+I would strongly encourage you to start your own journey in pursue of good tests.
+<br><br>
+I dont know if you will take the same route I have.
+<br><br>
+What I know for sure is that, what I showed you isn't a Silver Bullet. <br>
+There is still a lot to improve.
+<br><br>
+My journey isn't over yet....
+<br><br>
+Thank you!.
+<br><br>
+Either if you liked or not my presentation
+I would really aprecieate your feedback. <br>
+You can reach me on Twitter.
+<br>
+I see there is no time left for questions.
+But you are welcome to reach me in the lobby. I will happily anwser all your questions.
+
+
+</aside>
+                </section>
+
+			</div>
+
+		</div>
+
+		<script src="lib/js/head.min.js"></script>
+		<script src="js/reveal.js"></script>
+
+		<script>
+
+			// Full list of configuration options available here:
+			// https://github.com/hakimel/reveal.js#configuration
+			Reveal.initialize({
+				controls: true,
+				progress: true,
+				history: true,
+				center: true,
+
+				theme: 'serif', // available themes are in /css/theme
+				transition: 'none', // default/cube/page/concave/zoom/linear/fade/none
+
+				// Parallax scrolling
+				// parallaxBackgroundImage: 'https://s3.amazonaws.com/hakim-static/reveal-js/reveal-parallax-1.jpg',
+				// parallaxBackgroundSize: '2100px 900px',
+
+				// Optional libraries used to extend on reveal.js
+				dependencies: [
+					{ src: 'lib/js/classList.js', condition: function() { return !document.body.classList; } },
+					{ src: 'plugin/markdown/marked.js', condition: function() { return !!document.querySelector( '[data-markdown]' ); } },
+					{ src: 'plugin/markdown/markdown.js', condition: function() { return !!document.querySelector( '[data-markdown]' ); } },
+					{ src: 'plugin/highlight/highlight.js', async: true, callback: function() { hljs.initHighlightingOnLoad(); } },
+					{ src: 'plugin/zoom-js/zoom.js', async: true, condition: function() { return !!document.body.classList; } },
+//					{ src: 'plugin/notes/notes.js', async: true, condition: function() { return !!document.body.classList; } }
+                    { src: 'plugin/notes/notes.js', async: true }
+				]
+			});
+
+		</script>
+
+	</body>
+</html>

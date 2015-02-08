@@ -1,0 +1,74 @@
+
+#current-slide {
+    width: 40% !important;
+}
+#upcoming-slide {
+    width: 60% !important;
+    height: 30% !important;
+}
+#speaker-controls {
+    width: 60% !important;
+    height: 70% !important;
+    top: 30% !important;
+}
+
+table td.good {
+    background-color: #99FF99;
+    color: green;
+    text-align: center;
+    vertical-align: middle;
+}
+table td.ok {
+    background-color: #FFFF99;
+    text-align: center;   
+    color: #666666;
+    vertical-align: middle;
+}
+table td.bad {
+    background-color: #FF9999;
+    color: red;
+    text-align: center;    
+    vertical-align: middle;
+}
+
+img.pointer{
+    position: absolute;
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+}
+.code{
+    white-space:nowrap;    
+    font-family:monospace !important;
+    background-color:#FFFFFF;
+}
+
+.reveal .inverse h2{
+  text-shadow: 0px 0px 8px rgba(0, 0, 0, 0.6); 
+  padding: 10px;
+  background-color: rgba(0, 0, 0, 0.6);
+  color: #ffffff;
+}
+.reveal .inverse ul{
+  color: #ffffff;
+  list-style-type: none;
+  text-shadow: 0px 0px 8px rgba(0, 0, 0, 0.6); 
+  /*background-color: rgba(0, 0, 0, 0.6);*/
+}
+.reveal .inverse li{
+  background-color: rgba(0, 0, 0, 0.6);
+  text-shadow: 2px 1px 4px rgba(0, 0, 0, 0.6); 
+  padding: 10px; 
+  font-size:120%;
+}
+.reveal .inverse h3 a, 
+.reveal .inverse h3 b{
+  color: #ffffff;
+  padding: 10px;
+  background-color: rgba(0, 0, 0, 0.6);
+}
+
+div#notes {
+    white-space:nowrap;    
+    font-family:monospace !important;
+}
